@@ -4,6 +4,6 @@ fn main()
 {
 	gcc::compile_library(
 		"libhttpserver.a",
-		&["../lib/httpserver/httpsocket.c", "../lib/httpserver/httputils.c", "../lib/httpserver/httpserver.c"]
+		&["httpserver/httpsocket.c", "httpserver/httputils.c", "httpserver/httpserver.c"]
 	);
 }

@@ -84,12 +84,6 @@ impl HttpServer
 
 	extern "C" fn callback(request: *const HttpRequest, target: *mut HttpServer) -> HttpResponse
 	{
-		/*println!("I'm called from C with value {0}", a);
-		unsafe {
-			// Update the value in RustObject with the value received from the callback:
-			(*target).a = a;
-		}
-		*/
 		HttpResponse {
 			message: HttpMessage::HTTP_200_OK,
 			content: ptr::null(),
