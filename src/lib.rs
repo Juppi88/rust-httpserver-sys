@@ -4,23 +4,25 @@
 
 extern crate libc;
 
-use libc::c_char;
+use libc::{ c_char, size_t };
 use std::ptr;
 use std::ffi::CString;
 
 #[repr(C)]
-pub struct HttpRequest {
-	method: *const c_char,
-	request: *const c_char,
-	protocol: *const c_char,
-	hostname: *const c_char,
+pub struct ServerSettings {
+	handler: HttpCallback,
+	port: u16,
+	max_connections: u16,
+	timeout: u32,
+	connection_timeout: u32,
+	directories: *const ServerDirectory,
+	directories_len: size_t,
 }
 
 #[repr(C)]
-pub struct HttpResponse {
-	message: HttpMessage,
-	content: *const c_char,
-	content_type: *const c_char,
+pub struct ServerDirectory {
+	path: *const c_char,
+	directory: *const c_char,
 }
 
 #[repr(C)]
@@ -29,37 +31,108 @@ enum HttpMessage {
 	HTTP_400_BAD_REQUEST,
 	HTTP_401_UNAUTHORIZED,
 	HTTP_404_NOT_FOUND,
-	NUM_MESSAGES
-}
-
-type HttpCallback = extern fn(request: *const HttpRequest, target: *mut HttpServer) -> HttpResponse;
-
-#[link(name="httpserver", kind="static")]
-extern {
-	fn http_server_initialize(port: u16, callback_handler: HttpCallback, target: *mut HttpServer) -> bool;
-	fn http_server_shutdown();
-	fn http_server_listen();
-	fn http_server_add_static_directory(path: *const c_char, directory: *const c_char);
 }
 
 #[repr(C)]
+pub struct HttpRequest {
+	requester: *const c_char,
+	method: *const c_char,
+	request: *const c_char,
+}
+
+#[repr(C)]
+pub struct HttpResponse {
+	message: HttpMessage,
+	content: *const c_char,
+	content_type: *const c_char,
+	content_length: usize,
+}
+
+type HttpCallback = extern fn(request: *const HttpRequest/*, target: *mut HttpServer*/) -> HttpResponse;
+
+#[link(name="httpserver", kind="static")]
+extern {
+	fn http_server_initialize(configuration: ServerSettings) -> bool;
+	fn http_server_shutdown();
+	fn http_server_listen();
+}
+
 pub struct HttpServer {
 	port: u16,
+	max_connections: u16,
+	timeout: u32,
+	connection_timeout: u32,
+	directories: Vec<ServerDirectory>,
 }
 
 impl HttpServer
 {
-	pub fn new(port: u16) -> HttpServer
+	pub fn new() -> HttpServer
 	{
-		let mut server = Box::new(HttpServer {
-			port: port,
+		let server = Box::new(
+			HttpServer {
+				port: 80,
+				max_connections: 10,
+				timeout: 0,
+				connection_timeout: 60,
+				directories: Vec::new(),
 		});
 
+		return *server;
+	}
+
+	pub fn port(mut self, port: u16) -> HttpServer
+	{
+		self.port = port;
+		self
+	}
+
+	pub fn max_connections(mut self, connections: u16) -> HttpServer
+	{
+		self.max_connections = connections;
+		self
+	}
+
+	pub fn socket_timeout(mut self, millisec: u32) -> HttpServer
+	{
+		self.timeout = millisec;
+		self
+	}
+
+	pub fn client_timeout(mut self, seconds: u32) -> HttpServer
+	{
+		self.connection_timeout = seconds;
+		self
+	}
+
+	pub fn directory(mut self, path: &str, directory: &str) -> HttpServer
+	{
+		self.directories.push(
+			ServerDirectory {
+				path: CString::new(path).unwrap().as_ptr(),
+				directory: CString::new(directory).unwrap().as_ptr(),
+			});
+
+		self
+	}
+
+	pub fn start(self) -> HttpServer
+	{
+		let config = ServerSettings {
+			handler: HttpServer::callback,
+			port: self.port,
+			max_connections: self.max_connections,
+			timeout: self.timeout,
+			connection_timeout: self.connection_timeout,
+			directories: self.directories.as_ptr(),
+			directories_len: self.directories.len(),
+		};
+
 		unsafe {
-			http_server_initialize(port, HttpServer::callback, &mut *server);
+			http_server_initialize(config);
 		}
 
-		return *server;
+		self
 	}
 
 	pub fn listen(&self)
@@ -69,25 +142,14 @@ impl HttpServer
 		}
 	}
 
-	pub fn add_static_directory(&self, path: &str, directory: &str)
-	{
-		let path_str = CString::new(path).unwrap();
-		let directory_str = CString::new(directory).unwrap();
-
-		let directory_ptr = directory_str.as_ptr();
-		let path_ptr = path_str.as_ptr();
-
-		unsafe {
-			http_server_add_static_directory(path_ptr, directory_ptr);
-		}
-	}
-
-	extern "C" fn callback(request: *const HttpRequest, target: *mut HttpServer) -> HttpResponse
+	extern "C" fn callback(request: *const HttpRequest) -> HttpResponse
+	//, target: *mut HttpServer
 	{
 		HttpResponse {
 			message: HttpMessage::HTTP_200_OK,
 			content: ptr::null(),
 			content_type: ptr::null(),
+			content_length: 0,
 		}
 	}
 }
