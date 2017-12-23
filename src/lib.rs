@@ -1,6 +1,7 @@
 ﻿#![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(non_camel_case_types)]
+#![allow(improper_ctypes)] // Disable to pass the HttpServer struct as context to the library
 
 extern crate libc;
 
@@ -17,6 +18,7 @@ pub struct ServerSettings {
 	connection_timeout: u32,
 	directories: *const ServerDirectory,
 	directories_len: size_t,
+	context: *mut HttpServer,
 }
 
 #[repr(C)]
@@ -48,7 +50,7 @@ pub struct HttpResponse {
 	content_length: usize,
 }
 
-type HttpCallback = extern fn(request: *const HttpRequest/*, target: *mut HttpServer*/) -> HttpResponse;
+type HttpCallback = extern fn(request: *const HttpRequest, context: *mut HttpServer) -> HttpResponse;
 
 #[link(name="httpserver", kind="static")]
 extern {
@@ -116,7 +118,7 @@ impl HttpServer
 		self
 	}
 
-	pub fn start(self) -> HttpServer
+	pub fn start(&mut self)
 	{
 		let config = ServerSettings {
 			handler: HttpServer::callback,
@@ -126,13 +128,12 @@ impl HttpServer
 			connection_timeout: self.connection_timeout,
 			directories: self.directories.as_ptr(),
 			directories_len: self.directories.len(),
+			context: self,
 		};
 
 		unsafe {
 			http_server_initialize(config);
 		}
-
-		self
 	}
 
 	pub fn listen(&self)
@@ -142,8 +143,7 @@ impl HttpServer
 		}
 	}
 
-	extern "C" fn callback(request: *const HttpRequest) -> HttpResponse
-	//, target: *mut HttpServer
+	extern "C" fn callback(request: *const HttpRequest, context: *mut HttpServer) -> HttpResponse
 	{
 		HttpResponse {
 			message: HttpMessage::HTTP_200_OK,
